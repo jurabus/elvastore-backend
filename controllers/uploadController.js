@@ -1,68 +1,65 @@
-import { PassThrough } from "stream";
+// controllers/uploadController.js
 import bucket from "../firebase.js";
 import multer from "multer";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 
 const storage = multer.memoryStorage();
-export const upload = multer({
-  storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
-});
+const upload = multer({ storage }).single("image");
 
 /**
- * 🟢 POST /api/upload
- * Upload an image to Firebase Storage
+ * POST /api/upload
+ * Upload file to Firebase Storage (correct for new firebasestorage.app)
  */
-export const uploadImage = async (req, res) => {
-  try {
-    if (!req.file) {
+export const uploadImage = (req, res) => {
+  upload(req, res, async (err) => {
+    if (err) return res.status(400).json({ success: false, message: err.message });
+    if (!req.file)
       return res.status(400).json({ success: false, message: "No file uploaded" });
+
+    try {
+      const file = req.file;
+      const fileName = `uploads/${uuidv4()}-${Date.now()}${path.extname(file.originalname)}`;
+      const blob = bucket.file(fileName);
+
+      // ✅ Stream upload to Firebase Storage
+      const blobStream = blob.createWriteStream({
+        metadata: { contentType: file.mimetype },
+      });
+
+      blobStream.on("error", (error) => {
+        console.error("❌ Upload error:", error);
+        res.status(500).json({ success: false, message: error.message });
+      });
+
+      blobStream.on("finish", async () => {
+        try {
+          await blob.makePublic();
+
+          // ✅ Use Google Cloud Storage direct link (works for new system)
+          const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+
+          console.log("✅ Uploaded:", fileName);
+          console.log("🌐 Public URL:", publicUrl);
+
+          res.status(200).json({ success: true, url: publicUrl });
+        } catch (err) {
+          console.error("⚠️ Failed to make public:", err);
+          res.status(500).json({ success: false, message: err.message });
+        }
+      });
+
+      blobStream.end(file.buffer);
+    } catch (error) {
+      console.error("🔥 Upload failed:", error);
+      res.status(500).json({ success: false, message: error.message });
     }
-
-    const ext = path.extname(req.file.originalname) || ".jpg";
-    const fileName = `uploads/${Date.now()}-${uuidv4()}${ext}`;
-    const file = bucket.file(fileName);
-
-    const stream = new PassThrough();
-    stream.end(req.file.buffer);
-
-    await new Promise((resolve, reject) => {
-      stream
-        .pipe(
-          file.createWriteStream({
-            metadata: {
-              contentType: req.file.mimetype,
-              cacheControl: "public, max-age=31536000",
-            },
-            resumable: false,
-          })
-        )
-        .on("error", reject)
-        .on("finish", resolve);
-    });
-
-    // Make file public
-    await file.makePublic();
-
-    // 🧠 Detect if bucket is new (firebasestorage.app) or old (appspot.com)
-    const isNewStorageDomain = bucket.name.includes(".firebasestorage.app");
-    const baseUrl = isNewStorageDomain
-      ? `https://${bucket.name}`
-      : `https://firebasestorage.googleapis.com/v0/b/${bucket.name}`;
-
-    const url = `${baseUrl}/o/${encodeURIComponent(fileName)}?alt=media`;
-
-    res.json({ success: true, url });
-  } catch (e) {
-    console.error("❌ uploadImage error:", e);
-    res.status(500).json({ success: false, message: e.message });
-  }
+  });
 };
 
 /**
- * 🟠 DELETE /api/upload
- * Delete an image from Firebase Storage by its public URL
+ * DELETE /api/upload
+ * Delete image by public URL
  */
 export const deleteByUrl = async (req, res) => {
   try {
@@ -71,7 +68,7 @@ export const deleteByUrl = async (req, res) => {
       return res.status(400).json({ success: false, message: "Missing 'url'" });
 
     const decoded = decodeURIComponent(url);
-    const match = decoded.match(/\/o\/(.+)\?alt=media/);
+    const match = decoded.match(/https:\/\/storage\.googleapis\.com\/[^/]+\/(.+)/);
     if (match && match[1]) {
       const filePath = match[1];
       await bucket.file(filePath).delete({ ignoreNotFound: true });
@@ -79,8 +76,8 @@ export const deleteByUrl = async (req, res) => {
     }
 
     res.json({ success: true });
-  } catch (e) {
-    console.error("❌ deleteByUrl error:", e);
-    res.status(500).json({ success: false, message: e.message });
+  } catch (error) {
+    console.error("❌ deleteByUrl error:", error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };

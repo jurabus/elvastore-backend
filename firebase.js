@@ -12,7 +12,7 @@ if (!admin.apps.length) {
         clientEmail: env.firebase.clientEmail,
         privateKey: cleanPrivateKey,
       }),
-      storageBucket: env.firebase.storageBucket,
+      storageBucket: "elvastore0.firebasestorage.app",
     });
 
     console.log("✅ Firebase Admin initialized successfully");
