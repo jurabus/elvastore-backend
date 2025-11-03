@@ -2,7 +2,7 @@ import bucket from "../firebase.js";
 import multer from "multer";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
-
+import { PassThrough } from "stream";
 const storage = multer.memoryStorage();
 export const upload = multer({ storage });
 
@@ -10,28 +10,35 @@ export const upload = multer({ storage });
  * 🟢 POST /api/upload
  * Upload an image to Firebase Storage
  */
+
+
 export const uploadImage = async (req, res) => {
   try {
-    if (!req.file)
+    if (!req.file) {
       return res.status(400).json({ success: false, message: "No file uploaded" });
-
-    if (!bucket) {
-      throw new Error("Firebase Storage bucket not initialized");
     }
 
     const ext = path.extname(req.file.originalname) || ".jpg";
     const fileName = `uploads/${Date.now()}-${uuidv4()}${ext}`;
     const file = bucket.file(fileName);
 
-    await file.save(req.file.buffer, {
-      metadata: {
-        contentType: req.file.mimetype,
-        cacheControl: "public, max-age=31536000",
-      },
-      resumable: false,
+    // Convert buffer to readable stream
+    const stream = new PassThrough();
+    stream.end(req.file.buffer);
+
+    await new Promise((resolve, reject) => {
+      stream
+        .pipe(file.createWriteStream({
+          metadata: {
+            contentType: req.file.mimetype,
+            cacheControl: "public, max-age=31536000",
+          },
+          resumable: false,
+        }))
+        .on("error", reject)
+        .on("finish", resolve);
     });
 
-    // Make file public (optional)
     await file.makePublic();
 
     const url = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(fileName)}?alt=media`;
@@ -42,6 +49,7 @@ export const uploadImage = async (req, res) => {
     res.status(500).json({ success: false, message: e.message });
   }
 };
+
 
 /**
  * 🟠 DELETE /api/upload

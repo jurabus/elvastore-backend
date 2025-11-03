@@ -1,14 +1,17 @@
-import admin from 'firebase-admin';
-import { env } from './config/env.js';
+import admin from "firebase-admin";
+import { env } from "./config/env.js";
+
+// 🧠 Clean up the private key for Render (convert \n to real newlines)
+const cleanPrivateKey = env.firebase.privateKey.replace(/\\n/g, "\n");
 
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert({
       projectId: env.firebase.projectId,
       clientEmail: env.firebase.clientEmail,
-      privateKey: env.firebase.privateKey,
+      privateKey: cleanPrivateKey,
     }),
-    storageBucket: env.firebase.storageBucket
+    storageBucket: env.firebase.storageBucket,
   });
 }
 
