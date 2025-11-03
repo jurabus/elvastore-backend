@@ -16,16 +16,29 @@ export const getCart = async (req, res) => {
   }
 };
 
-/**
+//**
  * POST /api/cart
  * Add or update a product in the cart
- * body: { userId, item }
+ * body: { userId, item: { productId?, name, price, size, color, qty, imageUrl } }
  */
 export const addToCart = async (req, res) => {
   try {
     const { userId, item } = req.body;
     if (!userId || !item?.name)
       return res.status(400).json({ message: "userId and item required" });
+
+    // Optional: validate stock if productId + (size,color) present
+    if (item.productId && (item.size || item.color)) {
+      const p = await Product.findById(item.productId);
+      if (!p) return res.status(404).json({ message: "Product not found" });
+
+      const variant = (p.variants || []).find(
+        (v) => v.size === String(item.size || "") && v.color === String(item.color || "")
+      );
+      if (!variant || variant.qty <= 0) {
+        return res.status(400).json({ message: "Selected variant is out of stock" });
+      }
+    }
 
     let cart = await Cart.findOne({ userId });
     if (!cart) cart = new Cart({ userId, items: [] });
@@ -38,15 +51,16 @@ export const addToCart = async (req, res) => {
     );
 
     if (existing) {
-      existing.qty += 1;
+      existing.qty += Number(item.qty || 1);
     } else {
       cart.items.push({
-        name: item.name,
-        price: item.price || 0,
-        qty: item.qty || 1,
-        size: item.size || "",
-        color: item.color || "",
-        imageUrl: item.imageUrl || "",
+        productId: item.productId || undefined,
+        name:  item.name,
+        price: Number(item.price || 0),
+        qty:   Number(item.qty || 1),
+        size:  String(item.size || ""),
+        color: String(item.color || ""),
+        imageUrl: String(item.imageUrl || ""),
       });
     }
 

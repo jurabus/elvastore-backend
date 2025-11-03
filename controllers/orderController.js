@@ -1,9 +1,9 @@
 import Order from "../models/Order.js";
 import Cart from "../models/Cart.js";
-
+import Product from "../models/Product.js";
 /**
  * 🟢 POST /api/orders
- * Create a new order
+ * Create a new order + atomically deduct variant quantities (best-effort)
  */
 export const createOrder = async (req, res) => {
   try {
@@ -11,15 +11,88 @@ export const createOrder = async (req, res) => {
     if (!userId || !phone || !address || !items.length)
       return res.status(400).json({ message: "Missing required fields" });
 
+    // Normalize order items; carry productId when provided (recommended)
     const normalized = items.map((it) => ({
-      name: String(it.name || ""),
-      price: Number(it.price || 0),
-      qty: Number(it.qty || 1),
-      size: String(it.size || ""),
-      color: String(it.color || ""),
+      productId: it.productId ? String(it.productId) : undefined,
+      name:   String(it.name || ""),
+      price:  Number(it.price || 0),
+      qty:    Math.max(1, Number(it.qty || 1)),
+      size:   String(it.size || ""),
+      color:  String(it.color || ""),
       imageUrl: String(it.imageUrl || ""),
     }));
 
+    // 1) Validate stock availability for every variant
+    const outOfStock = [];
+    const productCache = new Map(); // id -> product
+
+    for (const it of normalized) {
+      let product = null;
+
+      if (it.productId) {
+        if (!productCache.has(it.productId)) {
+          productCache.set(it.productId, await Product.findById(it.productId));
+        }
+        product = productCache.get(it.productId);
+      } else {
+        // legacy fallback by name
+        product = await Product.findOne({ name: it.name });
+      }
+
+      if (!product) {
+        outOfStock.push({ item: it, reason: "Product not found" });
+        continue;
+      }
+
+      const variant = (product.variants || []).find(
+        (v) => v.size === it.size && v.color === it.color
+      );
+
+      if (!variant || variant.qty < it.qty) {
+        outOfStock.push({
+          item: it,
+          reason: !variant ? "Variant not found" : `Only ${variant.qty} left`,
+        });
+      }
+    }
+
+    if (outOfStock.length) {
+      return res.status(400).json({
+        message: "Some items are out of stock",
+        details: outOfStock,
+      });
+    }
+
+    // 2) Deduct quantities (validated first → low risk of conflict)
+    for (const it of normalized) {
+      const prodId = it.productId
+        ? it.productId
+        : (await Product.findOne({ name: it.name }))?._id;
+
+      if (!prodId) {
+        return res.status(400).json({ message: `Product not found for ${it.name}` });
+      }
+
+      const result = await Product.updateOne(
+        {
+          _id: prodId,
+          "variants.color": it.color,
+          "variants.size": it.size,
+          "variants.qty": { $gte: it.qty }, // guard against negative stock
+        },
+        { $inc: { "variants.$.qty": -it.qty } }
+      );
+
+      if (!result.modifiedCount) {
+        // Extremely rare race: someone bought last unit between validation and update
+        return res.status(409).json({
+          message: "Stock just changed. Please review your cart.",
+          item: it,
+        });
+      }
+    }
+
+    // 3) Create order
     const subtotal = normalized.reduce((sum, it) => sum + it.price * it.qty, 0);
     const shipping = 0;
     const total = subtotal + shipping;
@@ -35,7 +108,7 @@ export const createOrder = async (req, res) => {
       total,
     });
 
-    // Optionally clear user cart
+    // 4) Clear user cart
     await Cart.findOneAndDelete({ userId });
 
     return res.status(201).json({ success: true, order });
