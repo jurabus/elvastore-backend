@@ -5,14 +5,15 @@ import path from "path";
 import { v4 as uuidv4 } from "uuid";
 
 const storage = multer.memoryStorage();
-export const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB max
+export const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
+});
 
 /**
  * 🟢 POST /api/upload
  * Upload an image to Firebase Storage
  */
-
-
 export const uploadImage = async (req, res) => {
   try {
     if (!req.file) {
@@ -28,20 +29,29 @@ export const uploadImage = async (req, res) => {
 
     await new Promise((resolve, reject) => {
       stream
-        .pipe(file.createWriteStream({
-          metadata: {
-            contentType: req.file.mimetype,
-            cacheControl: "public, max-age=31536000",
-          },
-          resumable: false,
-        }))
+        .pipe(
+          file.createWriteStream({
+            metadata: {
+              contentType: req.file.mimetype,
+              cacheControl: "public, max-age=31536000",
+            },
+            resumable: false,
+          })
+        )
         .on("error", reject)
         .on("finish", resolve);
     });
 
+    // Make file public
     await file.makePublic();
 
-    const url = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(fileName)}?alt=media`;
+    // 🧠 Detect if bucket is new (firebasestorage.app) or old (appspot.com)
+    const isNewStorageDomain = bucket.name.includes(".firebasestorage.app");
+    const baseUrl = isNewStorageDomain
+      ? `https://${bucket.name}`
+      : `https://firebasestorage.googleapis.com/v0/b/${bucket.name}`;
+
+    const url = `${baseUrl}/o/${encodeURIComponent(fileName)}?alt=media`;
 
     res.json({ success: true, url });
   } catch (e) {
@@ -49,7 +59,6 @@ export const uploadImage = async (req, res) => {
     res.status(500).json({ success: false, message: e.message });
   }
 };
-
 
 /**
  * 🟠 DELETE /api/upload
