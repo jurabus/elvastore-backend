@@ -7,28 +7,18 @@ import { v4 as uuidv4 } from "uuid";
 const storage = multer.memoryStorage();
 const upload = multer({ storage }).single("image");
 
-// ✅ Upload image with correct MIME type
+// === Upload file to Firebase Storage ===
 export const uploadImage = (req, res) => {
   upload(req, res, async (err) => {
     if (err) return res.status(400).json({ success: false, message: err.message });
-    if (!req.file)
-      return res.status(400).json({ success: false, message: "No file uploaded" });
+    if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
 
     try {
       const file = req.file;
-      const ext = path.extname(file.originalname) || ".jpg";
-      const fileName = `uploads/${uuidv4()}-${Date.now()}${ext}`;
+      const fileName = `${uuidv4()}-${Date.now()}${path.extname(file.originalname)}`;
       const blob = bucket.file(fileName);
-
       const blobStream = blob.createWriteStream({
-        // ✅ Correctly set metadata to preserve image type
-        metadata: {
-          metadata: {
-            firebaseStorageDownloadTokens: uuidv4(), // gives you ?token=... links
-          },
-          contentType: file.mimetype,
-          cacheControl: "public, max-age=31536000",
-        },
+        metadata: { contentType: file.mimetype },
       });
 
       blobStream.on("error", (error) => {
@@ -37,16 +27,9 @@ export const uploadImage = (req, res) => {
       });
 
       blobStream.on("finish", async () => {
-        // No need to makePublic — use tokenized URL
-        const token = blob.metadata?.metadata?.firebaseStorageDownloadTokens;
-
-        const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(
-          fileName
-        )}?alt=media&token=${token}`;
-
-        console.log("✅ Uploaded:", fileName);
-        console.log("🌐 Public URL:", publicUrl);
-
+        // ✅ Make file public
+        await blob.makePublic();
+        const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
         res.status(200).json({ success: true, url: publicUrl });
       });
 
@@ -56,26 +39,4 @@ export const uploadImage = (req, res) => {
       res.status(500).json({ success: false, message: error.message });
     }
   });
-};
-
-// ✅ Delete endpoint (unchanged)
-export const deleteByUrl = async (req, res) => {
-  try {
-    const { url } = req.body;
-    if (!url)
-      return res.status(400).json({ success: false, message: "Missing 'url'" });
-
-    const decoded = decodeURIComponent(url);
-    const match = decoded.match(/\/o\/(.+)\?alt=media/);
-    if (match && match[1]) {
-      const filePath = match[1].split("?")[0];
-      await bucket.file(filePath).delete({ ignoreNotFound: true });
-      console.log(`🗑️ Deleted file: ${filePath}`);
-    }
-
-    res.json({ success: true });
-  } catch (error) {
-    console.error("❌ deleteByUrl error:", error);
-    res.status(500).json({ success: false, message: error.message });
-  }
 };

@@ -1,25 +1,31 @@
+// firebase.js
 import admin from "firebase-admin";
-import { env } from "./config/env.js";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 if (!admin.apps.length) {
-  // 🧠 Render converts newlines in env vars to literal "\n" — unescape them:
-  const cleanPrivateKey = env.firebase.privateKey.replace(/\\n/g, "\n");
+  let serviceAccount;
 
   try {
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: env.firebase.projectId,
-        clientEmail: env.firebase.clientEmail,
-        privateKey: cleanPrivateKey,
-      }),
-      storageBucket: "elvastore0.firebasestorage.app",
-    });
-
-    console.log("✅ Firebase Admin initialized successfully");
-  } catch (err) {
-    console.error("❌ Firebase Admin initialization failed:", err);
+    // Parse the service account JSON from environment variable
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    } else {
+      throw new Error("FIREBASE_SERVICE_ACCOUNT environment variable is missing");
+    }
+  } catch (error) {
+    console.error("❌ Failed to parse Firebase service account JSON:", error);
+    process.exit(1); // Stop the app if credentials are invalid
   }
+
+  // Initialize Firebase Admin SDK
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    storageBucket: process.env.FIREBASE_STORAGE_BUCKET, // e.g. starlyclub.appspot.com
+  });
 }
 
 const bucket = admin.storage().bucket();
+
 export default bucket;
