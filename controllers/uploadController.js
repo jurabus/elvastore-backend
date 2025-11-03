@@ -1,4 +1,3 @@
-// controllers/uploadController.js
 import bucket from "../firebase.js";
 import multer from "multer";
 import path from "path";
@@ -7,10 +6,6 @@ import { v4 as uuidv4 } from "uuid";
 const storage = multer.memoryStorage();
 const upload = multer({ storage }).single("image");
 
-/**
- * POST /api/upload
- * Upload file to Firebase Storage (correct for new firebasestorage.app)
- */
 export const uploadImage = (req, res) => {
   upload(req, res, async (err) => {
     if (err) return res.status(400).json({ success: false, message: err.message });
@@ -22,7 +17,6 @@ export const uploadImage = (req, res) => {
       const fileName = `uploads/${uuidv4()}-${Date.now()}${path.extname(file.originalname)}`;
       const blob = bucket.file(fileName);
 
-      // ✅ Stream upload to Firebase Storage
       const blobStream = blob.createWriteStream({
         metadata: { contentType: file.mimetype },
       });
@@ -36,8 +30,8 @@ export const uploadImage = (req, res) => {
         try {
           await blob.makePublic();
 
-          // ✅ Use Google Cloud Storage direct link (works for new system)
-          const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+          // ✅ Works for all Firebase Storage buckets (new + old)
+          const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(fileName)}?alt=media`;
 
           console.log("✅ Uploaded:", fileName);
           console.log("🌐 Public URL:", publicUrl);
@@ -57,10 +51,6 @@ export const uploadImage = (req, res) => {
   });
 };
 
-/**
- * DELETE /api/upload
- * Delete image by public URL
- */
 export const deleteByUrl = async (req, res) => {
   try {
     const { url } = req.body;
@@ -68,7 +58,7 @@ export const deleteByUrl = async (req, res) => {
       return res.status(400).json({ success: false, message: "Missing 'url'" });
 
     const decoded = decodeURIComponent(url);
-    const match = decoded.match(/https:\/\/storage\.googleapis\.com\/[^/]+\/(.+)/);
+    const match = decoded.match(/\/o\/(.+)\?alt=media/);
     if (match && match[1]) {
       const filePath = match[1];
       await bucket.file(filePath).delete({ ignoreNotFound: true });
