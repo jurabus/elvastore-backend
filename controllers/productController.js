@@ -1,7 +1,7 @@
 // controllers/productController.js
 import Product, { COLOR_ENUM, CATEGORY_ENUM } from "../models/Product.js";
 
-/ --- helpers ---
+// --- helpers ---
 const coerceImages = (body) => {
   const imgs = Array.isArray(body.images) ? body.images.filter(Boolean) : [];
   if (!imgs.length && body.imageUrl) imgs.push(String(body.imageUrl));
