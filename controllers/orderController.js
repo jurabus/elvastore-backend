@@ -99,16 +99,30 @@ export const getOrder = async (req, res) => {
 };
 
 // Admin: update order status
+// controllers/orderController.js
 export const updateOrderStatus = async (req, res) => {
   try {
     const { status } = req.body;
-    if (!ORDER_STATUSES.includes(String(status))) {
+    if (!ORDER_STATUSES.includes(status))
       return res.status(400).json({ message: "Invalid status" });
-    }
-    const o = await Order.findById(req.params.id);
-    if (!o) return res.status(404).json({ message: "Not found" });
 
-    o.status = String(status);
+    const o = await Order.findById(req.params.id);
+    if (!o) return res.status(404).json({ message: "Order not found" });
+
+    // 🟢 Restock only if switching to "cancelled" from non-cancelled
+    if (status === "cancelled" && o.status !== "cancelled") {
+      for (const it of o.items) {
+        const p = await Product.findById(it.productId);
+        if (!p) continue;
+        const idx = p.variants.findIndex(v => v.size === it.size && v.color === it.color);
+        if (idx >= 0) {
+          p.variants[idx].qty += it.qty;
+          await p.save();
+        }
+      }
+    }
+
+    o.status = status;
     await o.save();
     return res.json(o);
   } catch (e) {
@@ -116,6 +130,7 @@ export const updateOrderStatus = async (req, res) => {
     return res.status(500).json({ message: "Server error" });
   }
 };
+
 
 // User: cancel pending order (restock variants)
 export const cancelOrder = async (req, res) => {
