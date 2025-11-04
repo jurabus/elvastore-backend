@@ -151,3 +151,17 @@ export const deleteProduct = async (req, res) => {
     return res.status(500).json({ message: "Server error" });
   }
 };
+
+// --- ENUMS ENDPOINT ---
+// GET /api/products/enums
+export const getProductEnums = async (req, res) => {
+  try {
+    return res.json({
+      categories: CATEGORY_ENUM,
+      colors: COLOR_ENUM,
+    });
+  } catch (e) {
+    console.error("getProductEnums error:", e);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
