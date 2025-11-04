@@ -7,6 +7,7 @@ import productRoutes from "./routes/productRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
 import cartRoutes from "./routes/cartRoutes.js";
 import uploadRoutes from "./routes/uploadRoutes.js";
+import categoryRoutes from "./routes/categoryRoutes.js";
 
 dotenv.config();
 const app = express();
@@ -35,6 +36,7 @@ app.use("/api/products", productRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/upload", uploadRoutes);
+app.use("/api/categories", categoryRoutes);
 
 // ====== ERROR HANDLER (optional but recommended) ======
 app.use((err, req, res, next) => {
