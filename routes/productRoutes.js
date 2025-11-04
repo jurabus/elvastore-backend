@@ -5,10 +5,10 @@ import {
   } from '../controllers/productController.js';
 
 const router = express.Router();
-
+router.get("/enums", getProductEnums);
 router.get('/', getProducts);
 router.get('/:id', getProduct);
-router.get("/enums", getProductEnums);
+
 router.post('/', createProduct);
 router.put('/:id', updateProduct);
 router.delete('/:id', deleteProduct);
