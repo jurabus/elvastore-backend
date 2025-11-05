@@ -24,16 +24,17 @@ app.use(express.json());
 app.use(
   cors({
     origin: [
-      "https://elvastore0.web.app",     // main production site
-      "https://elvastore0.firebaseapp.com", // optional fallback if deployed there too
-      "http://localhost:5000",          // optional for local dev
-      "http://localhost:5173",          // common Vite dev server
+      "https://elvastore0.web.app",
+      "https://elvastore0.firebaseapp.com",
+      /http:\/\/localhost(:\d+)?$/,
+      /http:\/\/127\.0\.0\.1(:\d+)?$/
     ],
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true, // ✅ allow cookies and authorization headers
+    credentials: true,
   })
 );
+
 
 // ====== DATABASE CONNECTION ======
 const connectDB = async () => {
