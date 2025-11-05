@@ -12,13 +12,13 @@ import { verifyToken } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// 🧾 AUTH
+// 🧾 AUTH ROUTES
 router.post("/signup", signup);
 router.post("/login", login);
 router.post("/logout", logout);
 router.get("/refresh", refreshToken); // 🔁 auto-renew access token
 
-// 🔒 PASSWORD MANAGEMENT
+// 🔒 PASSWORD MANAGEMENT ROUTES
 router.put("/change-password", verifyToken, changePassword);
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password", resetPassword);

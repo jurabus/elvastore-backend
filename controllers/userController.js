@@ -2,7 +2,9 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
-// Helper functions
+// =========================
+// 🔐 Helper functions
+// =========================
 const createAccessToken = (user) => {
   return jwt.sign({ id: user._id, phone: user.phone }, process.env.JWT_SECRET, {
     expiresIn: process.env.TOKEN_EXPIRES || "15m",
@@ -15,7 +17,9 @@ const createRefreshToken = (user) => {
   });
 };
 
+// =========================
 // 🟢 Signup
+// =========================
 export const signup = async (req, res) => {
   try {
     const { phone, password } = req.body;
@@ -35,7 +39,7 @@ export const signup = async (req, res) => {
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: true,
-      sameSite: "None", // required for Flutter Web
+      sameSite: "None", // ✅ required for Flutter web cookies
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -49,7 +53,9 @@ export const signup = async (req, res) => {
   }
 };
 
+// =========================
 // 🟢 Login
+// =========================
 export const login = async (req, res) => {
   try {
     const { phone, password } = req.body;
@@ -79,7 +85,9 @@ export const login = async (req, res) => {
   }
 };
 
+// =========================
 // 🟢 Refresh token
+// =========================
 export const refreshToken = async (req, res) => {
   const token = req.cookies.refreshToken;
   if (!token) return res.status(401).json({ message: "No refresh token" });
@@ -96,7 +104,9 @@ export const refreshToken = async (req, res) => {
   }
 };
 
+// =========================
 // 🟢 Logout
+// =========================
 export const logout = async (req, res) => {
   res.clearCookie("refreshToken", {
     httpOnly: true,
@@ -106,7 +116,9 @@ export const logout = async (req, res) => {
   res.json({ message: "Logged out successfully" });
 };
 
+// =========================
 // 🟢 Change password
+// =========================
 export const changePassword = async (req, res) => {
   try {
     const { phone, oldPassword, newPassword } = req.body;
@@ -125,5 +137,45 @@ export const changePassword = async (req, res) => {
     res
       .status(500)
       .json({ message: "Error updating password", error: err.message });
+  }
+};
+
+// =========================
+// 🟢 Forgot password (verify only phone)
+// =========================
+export const forgotPassword = async (req, res) => {
+  try {
+    const { phone } = req.body;
+    const user = await User.findOne({ phone });
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    res.json({
+      message: "Phone verified. You can now reset your password.",
+    });
+  } catch (err) {
+    res.status(500).json({
+      message: "Error verifying phone",
+      error: err.message,
+    });
+  }
+};
+
+// =========================
+// 🟢 Reset password (direct reset)
+// =========================
+export const resetPassword = async (req, res) => {
+  try {
+    const { phone, newPassword } = req.body;
+    const user = await User.findOne({ phone });
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    res.json({ message: "Password reset successful" });
+  } catch (err) {
+    res
+      .status(500)
+      .json({ message: "Error resetting password", error: err.message });
   }
 };
