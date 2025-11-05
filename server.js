@@ -23,17 +23,12 @@ app.use(express.json());
 // ✅ CORS setup for Flutter Web (with cookies & tokens)
 app.use(
   cors({
-    origin: [
-      "https://elvastore0.web.app",
-      "https://elvastore0.firebaseapp.com",
-      /http:\/\/localhost(:\d+)?$/,
-      /http:\/\/127\.0\.0\.1(:\d+)?$/
-    ],
+    origin: "*", // ✅ allow all origins (for debugging only)
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true,
   })
 );
+
 
 
 // ====== DATABASE CONNECTION ======
