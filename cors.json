@@ -1,10 +1,7 @@
 [
   {
-    "origin": [
-      "https://elvastore0.web.app",
-      "https://elvastore0.firebaseapp.com"
-    ],
-    "method": ["GET", "HEAD", "PUT", "POST", "DELETE"],
+    "origin": ["*"],
+    "method": ["GET", "HEAD"],
     "responseHeader": ["Content-Type", "Authorization"],
     "maxAgeSeconds": 3600
   }
