@@ -35,19 +35,20 @@ const variantSchema = new mongoose.Schema(
   {
     color: {
       type: String,
-      required: true,
+      required: [true, "Variant color is required"],
       enum: COLOR_ENUM,
       trim: true,
     },
     size: {
       type: String,
-      required: true,
+      required: [true, "Variant size is required"],
       trim: true,
-    }, // e.g. XS, S, M, L, XL, XXL, OneSize
+      maxlength: 10,
+    }, // XS, S, M, L, XL, etc.
     qty: {
       type: Number,
-      required: true,
-      min: 0,
+      required: [true, "Variant quantity is required"],
+      min: [0, "Quantity cannot be negative"],
     },
   },
   { _id: false }
@@ -56,23 +57,53 @@ const variantSchema = new mongoose.Schema(
 // ========================= PRODUCT SCHEMA =========================
 const productSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true, index: true, trim: true },
-    price: { type: Number, required: true, min: 0 },
+    name: {
+      type: String,
+      required: [true, "Product name is required"],
+      trim: true,
+      index: true,
+      minlength: 2,
+      maxlength: 120,
+    },
+    price: {
+      type: Number,
+      required: [true, "Product price is required"],
+      min: [0, "Price must be positive"],
+    },
     category: {
       type: String,
-      required: true,
+      required: [true, "Category is required"],
       enum: CATEGORY_ENUM,
-      index: true,
       trim: true,
+      index: true,
     },
-    images: { type: [String], default: [] },
+    images: {
+      type: [String],
+      validate: {
+        validator: (arr) =>
+          arr.every((url) =>
+            /^https?:\/\/[^\s]+$/i.test(url)
+          ),
+        message: "One or more image URLs are invalid",
+      },
+      default: [],
+    },
     featured: { type: Boolean, default: false },
-
-    // Inventory
-    variants: { type: [variantSchema], default: [] },
+    variants: {
+      type: [variantSchema],
+      validate: {
+        validator: (arr) => arr.length > 0,
+        message: "At least one variant is required",
+      },
+      default: [],
+    },
   },
   { timestamps: true }
 );
+
+// ========================= INDEXES =========================
+productSchema.index({ name: "text", category: 1, featured: 1 });
+productSchema.index({ createdAt: -1 });
 
 // ========================= VIRTUALS =========================
 productSchema.virtual("totalQty").get(function () {
@@ -82,8 +113,30 @@ productSchema.virtual("totalQty").get(function () {
   );
 });
 
+// ========================= CLEAN SERIALIZATION =========================
+productSchema.methods.sanitize = function () {
+  const o = this.toObject({ virtuals: true });
+  delete o.__v;
+  return o;
+};
+
 productSchema.set("toJSON", { virtuals: true });
 productSchema.set("toObject", { virtuals: true });
+
+// ========================= PRE-SAVE SANITIZATION =========================
+productSchema.pre("save", function (next) {
+  // remove invalid variants automatically
+  if (Array.isArray(this.variants)) {
+    this.variants = this.variants.filter(
+      (v) => v.color && v.size && v.qty >= 0
+    );
+  }
+  // deduplicate images
+  if (Array.isArray(this.images)) {
+    this.images = [...new Set(this.images)];
+  }
+  next();
+});
 
 // ========================= EXPORT =========================
 const Product = mongoose.model("Product", productSchema);

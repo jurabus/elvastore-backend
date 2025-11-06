@@ -1,105 +1,133 @@
 import bucket from "../firebase.js";
-import multer from "multer";
+import Busboy from "busboy";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 
-const storage = multer.memoryStorage();
-const upload = multer({ storage }).single("image");
+const setCors = (res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
+};
+export const corsPreflight = (req, res) => { setCors(res); res.sendStatus(200); };
 
-/**
- * 🟢 POST /api/upload
- * Upload an image to Firebase Storage and return a signed URL (Flutter Web safe)
- */
-export const uploadImage = (req, res) => {
-  upload(req, res, async (err) => {
-    if (err) {
-      return res.status(400).json({ success: false, message: err.message });
-    }
-    if (!req.file) {
-      return res
-        .status(400)
-        .json({ success: false, message: "No file uploaded" });
-    }
+// ---------- SINGLE STREAM (legacy compatible) ----------
+export const uploadImageStream = (req, res) => {
+  setCors(res);
+  const busboy = Busboy({ headers: req.headers });
+  let filePromise;
 
+  busboy.on("file", (_, file, info) => {
+    const ext = path.extname(info.filename || ".jpg") || ".jpg";
+    const fileName = `uploads/${uuidv4()}-${Date.now()}${ext}`;
+    const blob = bucket.file(fileName);
+    filePromise = new Promise((resolve, reject) => {
+      file.pipe(
+        blob.createWriteStream({
+          metadata: { contentType: info.mimeType || "image/jpeg", cacheControl: "public,max-age=31536000" },
+          resumable: false,
+        })
+      )
+      .on("error", reject)
+      .on("finish", async () => {
+        const [url] = await blob.getSignedUrl({ action: "read", expires: "03-01-2035" });
+        resolve(url);
+      });
+    });
+  });
+
+  busboy.on("finish", async () => {
     try {
-      const file = req.file;
-      const ext = path.extname(file.originalname) || ".jpg";
-      const fileName = `uploads/${uuidv4()}-${Date.now()}${ext}`;
-      const blob = bucket.file(fileName);
-
-      // ✅ Ensure correct MIME type
-      let contentType = file.mimetype;
-      if (!contentType || contentType === "application/octet-stream") {
-        if (ext.match(/\.png$/i)) contentType = "image/png";
-        else if (ext.match(/\.jpe?g$/i)) contentType = "image/jpeg";
-        else if (ext.match(/\.gif$/i)) contentType = "image/gif";
-        else contentType = "application/octet-stream";
-      }
-
-      // ✅ Upload buffer to Firebase Storage
-      const blobStream = blob.createWriteStream({
-        metadata: { contentType, cacheControl: "public, max-age=31536000" },
-      });
-
-      blobStream.on("error", (error) => {
-        console.error("❌ Upload error:", error);
-        res
-          .status(500)
-          .json({ success: false, message: "Upload failed: " + error.message });
-      });
-
-      blobStream.on("finish", async () => {
-        try {
-          // ✅ Generate long-lived signed URL (no makePublic(), CORS-safe)
-          const [signedUrl] = await blob.getSignedUrl({
-            action: "read",
-            expires: "03-01-2035", // valid until 2035
-          });
-
-          console.log("✅ Uploaded:", fileName);
-          console.log("🌐 Signed URL:", signedUrl);
-
-          res.status(200).json({ success: true, url: signedUrl });
-        } catch (error) {
-          console.error("⚠️ Signed URL generation failed:", error);
-          res.status(500).json({
-            success: false,
-            message: "Signed URL generation failed: " + error.message,
-          });
-        }
-      });
-
-      blobStream.end(file.buffer);
-    } catch (error) {
-      console.error("🔥 Upload failed:", error);
-      res.status(500).json({ success: false, message: error.message });
+      const url = await filePromise;
+      res.json({ success: true, urls: [url] });
+    } catch (e) {
+      res.status(500).json({ success: false, message: e.message });
     }
   });
+  req.pipe(busboy);
 };
 
-/**
- * 🟠 DELETE /api/upload
- * Delete an image from Firebase Storage using its signed URL
- */
+// ---------- MULTI STREAM ----------
+export const uploadMultipleStream = (req, res) => {
+  setCors(res);
+  const busboy = Busboy({ headers: req.headers });
+  const promises = [];
+
+  busboy.on("file", (_, file, info) => {
+    const ext = path.extname(info.filename || ".jpg") || ".jpg";
+    const fileName = `uploads/${uuidv4()}-${Date.now()}${ext}`;
+    const blob = bucket.file(fileName);
+    const p = new Promise((resolve, reject) => {
+      file.pipe(
+        blob.createWriteStream({
+          metadata: { contentType: info.mimeType || "image/jpeg", cacheControl: "public,max-age=31536000" },
+          resumable: false,
+        })
+      )
+      .on("error", reject)
+      .on("finish", async () => {
+        const [url] = await blob.getSignedUrl({ action: "read", expires: "03-01-2035" });
+        resolve(url);
+      });
+    });
+    promises.push(p);
+  });
+
+  busboy.on("finish", async () => {
+    try {
+      const urls = await Promise.all(promises);
+      res.json({ success: true, urls });
+    } catch (e) {
+      res.status(500).json({ success: false, message: e.message });
+    }
+  });
+  req.pipe(busboy);
+};
+
+// ---------- DIRECT UPLOAD (prepare + complete) ----------
+export const getUploadUrl = async (req, res) => {
+  setCors(res);
+  try {
+    const { contentType = "image/jpeg", ext = ".jpg" } = req.body || {};
+    const fileName = `uploads/${uuidv4()}-${Date.now()}${ext}`;
+    const [uploadUrl] = await bucket.file(fileName).getSignedUrl({
+      action: "write",
+      expires: Date.now() + 10 * 60 * 1000,
+      contentType,
+    });
+    res.json({ success: true, uploadUrl, fileName, contentType });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+export const getReadUrl = async (req, res) => {
+  setCors(res);
+  try {
+    const { fileName } = req.body;
+    if (!fileName) return res.status(400).json({ success: false, message: "fileName required" });
+    const file = bucket.file(fileName);
+    const [exists] = await file.exists();
+    if (!exists) return res.status(404).json({ success: false, message: "File not found" });
+    const [url] = await file.getSignedUrl({ action: "read", expires: "03-01-2035" });
+    res.json({ success: true, url });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+// ---------- DELETE ----------
 export const deleteByUrl = async (req, res) => {
+  setCors(res);
   try {
     const { url } = req.body;
-    if (!url)
-      return res
-        .status(400)
-        .json({ success: false, message: "Missing 'url'" });
-
+    if (!url) return res.status(400).json({ success: false, message: "Missing url" });
     const decoded = decodeURIComponent(url);
-    const match = decoded.match(/\/o\/(.+)\?/);
-    if (match && match[1]) {
-      const filePath = match[1];
-      await bucket.file(filePath).delete({ ignoreNotFound: true });
-      console.log(`🗑️ Deleted file: ${filePath}`);
-    }
-
+    const match = decoded.match(/\/o\/([^?]+)\?/);
+    const filePath = match?.[1];
+    if (!filePath) return res.status(400).json({ success: false, message: "Invalid URL" });
+    await bucket.file(filePath).delete({ ignoreNotFound: true });
     res.json({ success: true });
-  } catch (error) {
-    console.error("❌ deleteByUrl error:", error);
-    res.status(500).json({ success: false, message: error.message });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
   }
 };

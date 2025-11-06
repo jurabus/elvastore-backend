@@ -1,17 +1,24 @@
 import express from "express";
-import { uploadImage, deleteByUrl } from "../controllers/uploadController.js";
+import {
+  uploadImageStream,
+  uploadMultipleStream,
+  getUploadUrl,
+  getReadUrl,
+  deleteByUrl,
+  corsPreflight,
+} from "../controllers/uploadController.js";
 
 const router = express.Router();
 
-router.post("/", uploadImage);
-router.delete("/", deleteByUrl);
+// multipart (legacy) — single or multiple
+router.post("/", uploadImageStream);          // single
+router.post("/multi", uploadMultipleStream);  // multiple
 
-// Handle CORS preflight (important for Flutter Web)
-router.options("/", (req, res) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  res.sendStatus(200);
-});
+// direct-upload flow (for presigned PUTs)
+router.post("/prepare", getUploadUrl);
+router.post("/complete", getReadUrl);
+
+router.delete("/", deleteByUrl);
+router.options(["/", "/multi", "/prepare", "/complete"], corsPreflight);
 
 export default router;
