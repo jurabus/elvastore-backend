@@ -47,6 +47,7 @@ export const signup = async (req, res) => {
     res.status(201).json({
       message: "Signup successful",
       token: accessToken,
+	  refreshToken, 
       user,
     });
   } catch (err) {
@@ -79,6 +80,7 @@ export const login = async (req, res) => {
     res.json({
       message: "Login successful",
       token: accessToken,
+	  refreshToken, 
       user,
     });
   } catch (err) {
@@ -89,21 +91,37 @@ export const login = async (req, res) => {
 // =========================
 // 🟢 Refresh token
 // =========================
+// =========================
+// 🟢 Refresh token (supports cookie or header)
+// =========================
 export const refreshToken = async (req, res) => {
-  const token = req.cookies.refreshToken;
-  if (!token) return res.status(401).json({ message: "No refresh token" });
-
   try {
+    let token = req.cookies?.refreshToken;
+
+    // ✅ Also support header fallback (for mobile/web without cookies)
+    if (!token && req.headers.authorization?.startsWith("Bearer ")) {
+      token = req.headers.authorization.split(" ")[1];
+    }
+
+    if (!token) return res.status(401).json({ message: "No refresh token provided" });
+
     const decoded = jwt.verify(token, process.env.REFRESH_SECRET);
     const user = await User.findById(decoded.id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    const newAccessToken = createAccessToken(user);
+    const newAccessToken = jwt.sign(
+      { id: user._id, phone: user.phone },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.TOKEN_EXPIRES || "15m" }
+    );
+
     res.json({ accessToken: newAccessToken });
   } catch (err) {
+    console.error("refreshToken error:", err);
     res.status(403).json({ message: "Invalid or expired refresh token" });
   }
 };
+
 
 // =========================
 // 📍 ADDRESS MANAGEMENT
