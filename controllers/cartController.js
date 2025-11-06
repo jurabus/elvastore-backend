@@ -2,7 +2,7 @@
 import Cart from "../models/Cart.js";
 import Product from "../models/Product.js";
 
-/** ---------- helpers ---------- */
+/* ------------------------ helpers ------------------------ */
 const getVariantAvailability = (product, size, color) => {
   if (!product) return { availableQty: 0 };
   const variants = Array.isArray(product.variants) ? product.variants : [];
@@ -57,9 +57,9 @@ const enrichCartDoc = async (cartDoc) => {
   };
 };
 
-/** ---------- endpoints ---------- */
+/* ------------------------ endpoints ------------------------ */
 
-// GET /api/cart/:userId  (enriched)
+// GET /api/cart/:userId
 export const getCart = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -79,25 +79,11 @@ export const addToCart = async (req, res) => {
     if (!userId || !item?.name)
       return res.status(400).json({ message: "userId and item required" });
 
-    if (item.productId && (item.size || item.color)) {
-      const p = await Product.findById(item.productId);
-      if (!p) return res.status(404).json({ message: "Product not found" });
-      const variant = (p.variants || []).find(
-        (v) => v.size === String(item.size || "") && v.color === String(item.color || "")
-      );
-      if (!variant || variant.qty <= 0) {
-        return res.status(400).json({ message: "Selected variant is out of stock" });
-      }
-    }
-
     let cart = await Cart.findOne({ userId });
     if (!cart) cart = new Cart({ userId, items: [] });
 
     const existing = cart.items.find(
-      (i) =>
-        i.name === item.name &&
-        i.size === item.size &&
-        i.color === item.color
+      (i) => i.name === item.name && i.size === item.size && i.color === item.color
     );
 
     if (existing) {
@@ -105,10 +91,10 @@ export const addToCart = async (req, res) => {
     } else {
       cart.items.push({
         productId: item.productId || undefined,
-        name:  item.name,
+        name: item.name,
         price: Number(item.price || 0),
-        qty:   Number(item.qty || 1),
-        size:  String(item.size || ""),
+        qty: Number(item.qty || 1),
+        size: String(item.size || ""),
         color: String(item.color || ""),
         imageUrl: String(item.imageUrl || ""),
       });
@@ -141,14 +127,7 @@ export const updateQty = async (req, res) => {
     if (qty <= 0) {
       cart.items.splice(idx, 1);
     } else {
-      const item = cart.items[idx];
-      if (item.productId) {
-        const product = await Product.findById(item.productId);
-        const { availableQty } = getVariantAvailability(product, item.size, item.color);
-        cart.items[idx].qty = Math.min(Number(qty), Math.max(availableQty, 0));
-      } else {
-        cart.items[idx].qty = Number(qty);
-      }
+      cart.items[idx].qty = Number(qty);
     }
 
     await cart.save();
@@ -164,7 +143,12 @@ export const updateQty = async (req, res) => {
 export const clearCart = async (req, res) => {
   try {
     const { userId } = req.params;
-    await Cart.findOneAndDelete({ userId });
+    // 🟢 Don’t delete the document — just clear items
+    const cart = await Cart.findOne({ userId });
+    if (cart) {
+      cart.items = [];
+      await cart.save();
+    }
     return res.status(200).json({ success: true });
   } catch (err) {
     console.error("clearCart error:", err);
@@ -172,7 +156,7 @@ export const clearCart = async (req, res) => {
   }
 };
 
-// POST /api/cart/merge  (guest → user)
+// POST /api/cart/merge (guest → user)
 export const mergeCart = async (req, res) => {
   try {
     const { userId, items } = req.body;
@@ -211,7 +195,7 @@ export const mergeCart = async (req, res) => {
   }
 };
 
-// GET /api/cart/:userId/preview  (purchasable vs sold-out)
+// GET /api/cart/:userId/preview
 export const checkoutPreview = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -222,9 +206,8 @@ export const checkoutPreview = async (req, res) => {
     const soldOutItems = [];
 
     for (const it of enriched.items) {
-      if (it.isOutOfStock || (it.availableQty ?? 0) <= 0) {
-        soldOutItems.push(it);
-      } else {
+      if (it.isOutOfStock || (it.availableQty ?? 0) <= 0) soldOutItems.push(it);
+      else {
         const finalQty = Math.min(Number(it.qty || 1), Number(it.availableQty || 0));
         purchasableItems.push({ ...it, qty: finalQty });
       }
