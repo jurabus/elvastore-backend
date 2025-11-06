@@ -2,7 +2,9 @@ import express from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import cors from "cors";
+import compression from "compression";
 import cookieParser from "cookie-parser";
+
 import budgetFriendlyRoutes from "./routes/budgetFriendlyRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
@@ -15,19 +17,20 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ====== MIDDLEWARES ======
-app.set("trust proxy", 1); // ✅ Required for cookies on HTTPS (Render/Netlify)
+// ================= MIDDLEWARES =================
+app.set("trust proxy", 1); // ✅ Needed for HTTPS cookies on Render/Firebase hosting
 app.use(cookieParser());
-app.use(express.json());
+app.use(express.json({ limit: "25mb" })); // allow JSON payloads for presigned uploads
+app.use(compression()); // ✅ reduces payload size (esp. for image lists)
 
-// ✅ CORS setup for Flutter Web (with cookies & tokens)
+// ✅ CORS setup for Flutter Web (supports both dev & prod)
 app.use(
   cors({
     origin: [
       "https://elvastore0.web.app",
       "https://elvastore0.firebaseapp.com",
       /http:\/\/localhost(:\d+)?$/,
-      /http:\/\/127\.0\.0\.1(:\d+)?$/
+      /http:\/\/127\.0\.0\.1(:\d+)?$/,
     ],
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -35,13 +38,16 @@ app.use(
   })
 );
 
+// For Busboy & preflight
+app.options("*", cors());
 
-
-
-// ====== DATABASE CONNECTION ======
+// ================= DATABASE CONNECTION =================
 const connectDB = async () => {
   try {
-    await mongoose.connect(process.env.MONGO_URI);
+    await mongoose.connect(process.env.MONGO_URI, {
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 5000,
+    });
     console.log("✅ MongoDB Connected Successfully");
   } catch (err) {
     console.error("❌ MongoDB Connection Error:", err.message);
@@ -50,8 +56,9 @@ const connectDB = async () => {
 };
 connectDB();
 
-// ====== ROUTES ======
+// ================= ROUTES =================
 app.get("/", (req, res) => res.send("ElvaStore API Running 🚀"));
+
 app.use("/api/budget-friendly", budgetFriendlyRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/products", productRoutes);
@@ -60,15 +67,17 @@ app.use("/api/cart", cartRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/categories", categoryRoutes);
 
-// ====== ERROR HANDLER ======
+// ================= ERROR HANDLER =================
 app.use((err, req, res, next) => {
   console.error("❌ Server Error:", err);
-  res
-    .status(500)
-    .json({ message: "Internal Server Error", error: err.message });
+  res.status(500).json({
+    success: false,
+    message: "Internal Server Error",
+    error: err.message,
+  });
 });
 
-// ====== START SERVER ======
+// ================= START SERVER =================
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });

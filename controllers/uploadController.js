@@ -23,7 +23,10 @@ export const uploadImageStream = (req, res) => {
     filePromise = new Promise((resolve, reject) => {
       file.pipe(
         blob.createWriteStream({
-          metadata: { contentType: info.mimeType || "image/jpeg", cacheControl: "public,max-age=31536000" },
+          metadata: {
+            contentType: info.mimeType || "image/jpeg",
+            cacheControl: "public,max-age=31536000",
+          },
           resumable: false,
         })
       )
@@ -59,7 +62,10 @@ export const uploadMultipleStream = (req, res) => {
     const p = new Promise((resolve, reject) => {
       file.pipe(
         blob.createWriteStream({
-          metadata: { contentType: info.mimeType || "image/jpeg", cacheControl: "public,max-age=31536000" },
+          metadata: {
+            contentType: info.mimeType || "image/jpeg",
+            cacheControl: "public,max-age=31536000",
+          },
           resumable: false,
         })
       )
@@ -104,10 +110,12 @@ export const getReadUrl = async (req, res) => {
   setCors(res);
   try {
     const { fileName } = req.body;
-    if (!fileName) return res.status(400).json({ success: false, message: "fileName required" });
+    if (!fileName)
+      return res.status(400).json({ success: false, message: "fileName required" });
     const file = bucket.file(fileName);
     const [exists] = await file.exists();
-    if (!exists) return res.status(404).json({ success: false, message: "File not found" });
+    if (!exists)
+      return res.status(404).json({ success: false, message: "File not found" });
     const [url] = await file.getSignedUrl({ action: "read", expires: "03-01-2035" });
     res.json({ success: true, url });
   } catch (e) {
@@ -120,11 +128,13 @@ export const deleteByUrl = async (req, res) => {
   setCors(res);
   try {
     const { url } = req.body;
-    if (!url) return res.status(400).json({ success: false, message: "Missing url" });
+    if (!url)
+      return res.status(400).json({ success: false, message: "Missing url" });
     const decoded = decodeURIComponent(url);
     const match = decoded.match(/\/o\/([^?]+)\?/);
     const filePath = match?.[1];
-    if (!filePath) return res.status(400).json({ success: false, message: "Invalid URL" });
+    if (!filePath)
+      return res.status(400).json({ success: false, message: "Invalid URL" });
     await bucket.file(filePath).delete({ ignoreNotFound: true });
     res.json({ success: true });
   } catch (e) {

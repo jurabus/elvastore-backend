@@ -7,7 +7,10 @@ export const getCategories = async (req, res) => {
     res.json({ success: true, items: cats });
   } catch (e) {
     console.error("getCategories error:", e);
-    res.status(500).json({ success: false, message: "Server error while fetching categories" });
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching categories",
+    });
   }
 };
 
@@ -15,17 +18,22 @@ export const getCategories = async (req, res) => {
 export const createCategory = async (req, res) => {
   try {
     const { name, imageUrl, featured } = req.body;
-
     if (!name || typeof name !== "string" || !name.trim()) {
-      return res.status(400).json({ success: false, message: "Field 'name' is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Field 'name' is required" });
     }
     if (!imageUrl || typeof imageUrl !== "string" || !imageUrl.startsWith("http")) {
-      return res.status(400).json({ success: false, message: "Valid 'imageUrl' is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Valid 'imageUrl' is required" });
     }
 
     const exists = await Category.findOne({ name: name.trim() });
     if (exists)
-      return res.status(400).json({ success: false, message: "Category already exists" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Category already exists" });
 
     const cat = await Category.create({
       name: name.trim(),
@@ -36,7 +44,10 @@ export const createCategory = async (req, res) => {
     res.status(201).json({ success: true, message: "Category created", item: cat });
   } catch (e) {
     console.error("createCategory error:", e);
-    res.status(500).json({ success: false, message: "Server error while creating category" });
+    res.status(500).json({
+      success: false,
+      message: "Server error while creating category",
+    });
   }
 };
 
@@ -44,7 +55,10 @@ export const createCategory = async (req, res) => {
 export const updateCategory = async (req, res) => {
   try {
     const cat = await Category.findById(req.params.id);
-    if (!cat) return res.status(404).json({ success: false, message: "Category not found" });
+    if (!cat)
+      return res
+        .status(404)
+        .json({ success: false, message: "Category not found" });
 
     const { name, imageUrl, featured } = req.body;
     if (name !== undefined) cat.name = String(name).trim();
@@ -55,7 +69,10 @@ export const updateCategory = async (req, res) => {
     res.json({ success: true, message: "Category updated", item: cat });
   } catch (e) {
     console.error("updateCategory error:", e);
-    res.status(500).json({ success: false, message: "Server error while updating category" });
+    res.status(500).json({
+      success: false,
+      message: "Server error while updating category",
+    });
   }
 };
 
@@ -63,11 +80,17 @@ export const updateCategory = async (req, res) => {
 export const deleteCategory = async (req, res) => {
   try {
     const cat = await Category.findById(req.params.id);
-    if (!cat) return res.status(404).json({ success: false, message: "Category not found" });
+    if (!cat)
+      return res
+        .status(404)
+        .json({ success: false, message: "Category not found" });
     await cat.deleteOne();
     res.json({ success: true, message: "Category deleted" });
   } catch (e) {
     console.error("deleteCategory error:", e);
-    res.status(500).json({ success: false, message: "Server error while deleting category" });
+    res.status(500).json({
+      success: false,
+      message: "Server error while deleting category",
+    });
   }
 };
