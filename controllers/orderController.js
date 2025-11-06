@@ -26,6 +26,93 @@ const adjustStock = async (productId, size, color, delta) => {
   }
 };
 
+
+
+/**
+ * POST /api/orders/from-cart
+ * body: { userId, address?, paymentMethod? }
+ * Creates an order from the user's cart — only with in-stock items.
+ */
+export const createOrderFromCart = async (req, res) => {
+  try {
+    const { userId, address, paymentMethod } = req.body;
+    if (!userId) return res.status(400).json({ message: "userId required" });
+
+    const cart = await Cart.findOne({ userId });
+    if (!cart || !cart.items.length)
+      return res.status(400).json({ message: "Cart is empty" });
+
+    const purchasable = [];
+    const soldOut = [];
+
+    for (const i of cart.items) {
+      const product = i.productId ? await Product.findById(i.productId) : null;
+      if (!product) { soldOut.push(i); continue; }
+
+      const variant = product.variants?.find(
+        (v) => v.size === i.size && v.color === i.color
+      );
+      const availableQty = variant ? variant.qty : product.variants?.reduce((a, v) => a + v.qty, 0) ?? 0;
+
+      if (!variant || availableQty <= 0) {
+        soldOut.push(i);
+        continue;
+      }
+
+      const finalQty = Math.min(i.qty, availableQty);
+      purchasable.push({ ...i.toObject?.() ?? i, qty: finalQty });
+
+      variant.qty = Math.max(variant.qty - finalQty, 0);
+      await product.save();
+    }
+
+    if (!purchasable.length) {
+      return res.status(400).json({ message: "No in-stock items to order" });
+    }
+
+    const subtotal = purchasable.reduce(
+      (s, i) => s + Number(i.price) * Number(i.qty),
+      0
+    );
+
+    const order = await Order.create({
+      userId,
+      items: purchasable.map((p) => ({
+        productId: p.productId,
+        name: p.name,
+        price: p.price,
+        qty: p.qty,
+        size: p.size,
+        color: p.color,
+        imageUrl: p.imageUrl,
+      })),
+      totalAmount: subtotal,
+      address: address || "Not provided",
+      paymentMethod: paymentMethod || "cash_on_delivery",
+      status: "pending",
+    });
+
+    // keep only sold-out items in cart (purchased ones removed)
+    cart.items = cart.items.filter(
+      (i) =>
+        soldOut.findIndex(
+          (s) => s.name === i.name && s.size === i.size && s.color === i.color
+        ) !== -1
+    );
+    await cart.save();
+
+    return res.status(201).json({
+      success: true,
+      message: "Order created from cart",
+      order,
+      soldOutItems: soldOut,
+    });
+  } catch (err) {
+    console.error("createOrderFromCart error:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
 /* ----------------------------------------------------------
    🛒 Create order
    - Decreases variant stock
