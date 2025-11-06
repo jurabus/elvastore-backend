@@ -17,6 +17,7 @@ const createRefreshToken = (user) => {
   });
 };
 
+
 // =========================
 // 🟢 Signup
 // =========================
@@ -101,6 +102,90 @@ export const refreshToken = async (req, res) => {
     res.json({ accessToken: newAccessToken });
   } catch (err) {
     res.status(403).json({ message: "Invalid or expired refresh token" });
+  }
+};
+
+// =========================
+// 📍 ADDRESS MANAGEMENT
+// =========================
+
+// 🟢 Get user addresses
+export const getAddresses = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    res.json({ addresses: user.addresses });
+  } catch (err) {
+    res.status(500).json({ message: "Error fetching addresses", error: err.message });
+  }
+};
+
+// 🟢 Add new address
+export const addAddress = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const newAddress = req.body;
+
+    // If new address is set as default, clear existing defaults
+    if (newAddress.isDefault) {
+      user.addresses.forEach(addr => (addr.isDefault = false));
+    }
+
+    user.addresses.push(newAddress);
+    await user.save();
+    res.json({ message: "Address added", addresses: user.addresses });
+  } catch (err) {
+    res.status(500).json({ message: "Error adding address", error: err.message });
+  }
+};
+
+// 🟢 Set default address
+export const setDefaultAddress = async (req, res) => {
+  try {
+    const { addressId } = req.params;
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    user.addresses.forEach(addr => {
+      addr.isDefault = addr._id.toString() === addressId;
+    });
+
+    await user.save();
+    res.json({ message: "Default address updated", addresses: user.addresses });
+  } catch (err) {
+    res.status(500).json({ message: "Error updating default", error: err.message });
+  }
+};
+
+// 🟢 Delete address
+export const deleteAddress = async (req, res) => {
+  try {
+    const { addressId } = req.params;
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    user.addresses = user.addresses.filter(addr => addr._id.toString() !== addressId);
+    await user.save();
+    res.json({ message: "Address deleted", addresses: user.addresses });
+  } catch (err) {
+    res.status(500).json({ message: "Error deleting address", error: err.message });
+  }
+};
+
+// 🟢 Update user name
+export const updateName = async (req, res) => {
+  try {
+    const { name } = req.body;
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    user.name = name;
+    await user.save();
+    res.json({ message: "Name updated successfully", name: user.name });
+  } catch (err) {
+    res.status(500).json({ message: "Error updating name", error: err.message });
   }
 };
 
