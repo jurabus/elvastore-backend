@@ -18,17 +18,31 @@ const orderSchema = new mongoose.Schema(
   {
     userId: { type: String, required: true, index: true },
     items: { type: [orderItemSchema], default: [] },
+
     subtotal: { type: Number, default: 0 },
     shipping: { type: Number, default: 0 },
     total: { type: Number, default: 0 },
 
-    // 🧩 Full structured address
+    // 🏠 Structured address fields
     address: { type: String, default: "" },
-    fullAddress: { type: mongoose.Schema.Types.Mixed, default: null }, // 🆕
+    fullAddress: { type: mongoose.Schema.Types.Mixed, default: null },
 
     phone: { type: String, default: "" },
     paymentMethod: { type: String, default: "COD" },
     status: { type: String, default: "pending", index: true },
+
+    // 🧩 Added fields to fix crash and support audit trail
+    statusChangedBy: { type: String, default: "System" },
+    statusHistory: {
+      type: [
+        {
+          status: { type: String },
+          changedBy: { type: String },
+          changedAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [], // <== ✅ prevents undefined .push()
+    },
   },
   { timestamps: true }
 );
