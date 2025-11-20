@@ -18,6 +18,14 @@ export const COLOR_ENUM = [
   "Navy",
   "Gold",
   "Silver",
+  "Cafe",
+  "Mustard",
+  "Burgundy",
+  "Fluorescent Pink",
+  "Offwhite",
+  "Olive",
+  "Brick Color",
+
 ];
 
 // ========================= VARIANT SCHEMA =========================
