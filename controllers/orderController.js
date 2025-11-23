@@ -94,19 +94,23 @@ export const createOrderFromCart = async (req, res) => {
 
     const purchasable = [];
     const soldOut = [];
-const affectedProducts = new Map();
+    const affectedProducts = new Map();
+
     for (const i of cart.items) {
-      const product = i.productId ? await Product.findById(i.productId) : null;
+      const product = i.productId
+        ? await Product.findById(i.productId)
+        : null;
+
       if (!product) {
         soldOut.push(i);
         continue;
       }
 
       const variant = product.variants?.find(
-  (v) =>
-    String(v.size || "") === String(i.size || "") &&
-    String(v.color || "") === String(i.color || "")
-);
+        (v) =>
+          String(v.size || "") === String(i.size || "") &&
+          String(v.color || "") === String(i.color || "")
+      );
 
       const availableQty = variant
         ? variant.qty
@@ -118,20 +122,24 @@ const affectedProducts = new Map();
       }
 
       const finalQty = Math.min(i.qty, availableQty);
-      purchasable.push({ ...i.toObject?.() ?? i, qty: finalQty });
+
+      purchasable.push({ ...(i.toObject?.() ?? i), qty: finalQty });
+
+      // Apply stock reduction — but only SAVE ONCE LATER
+      variant.qty = Math.max(variant.qty - finalQty, 0);
 
       if (!affectedProducts.has(product._id.toString())) {
-    affectedProducts.set(product._id.toString(), product);
-  }
-}
-
-for (const p of affectedProducts.values()) {
-  await p.save();
-}
+        affectedProducts.set(product._id.toString(), product);
+      }
     }
 
     if (!purchasable.length) {
       return res.status(400).json({ message: "No in-stock items to order" });
+    }
+
+    // ✅ Save all modified products only ONCE
+    for (const p of affectedProducts.values()) {
+      await p.save();
     }
 
     const subtotal = purchasable.reduce(
@@ -173,7 +181,7 @@ for (const p of affectedProducts.values()) {
       shipping,
       total,
       address: addressString,
-      fullAddress: fullAddressObj, // 🆕
+      fullAddress: fullAddressObj,
       phone: phone || "",
       paymentMethod: paymentMethod || "COD",
       status: "pending",
@@ -183,7 +191,10 @@ for (const p of affectedProducts.values()) {
     cart.items = cart.items.filter(
       (i) =>
         soldOut.findIndex(
-          (s) => s.name === i.name && s.size === i.size && s.color === i.color
+          (s) =>
+            String(s.name) === String(i.name) &&
+            String(s.size) === String(i.size) &&
+            String(s.color) === String(i.color)
         ) !== -1
     );
     await cart.save();
@@ -199,6 +210,7 @@ for (const p of affectedProducts.values()) {
     return res.status(500).json({ message: "Server error" });
   }
 };
+
 
 /* ----------------------------------------------------------
    🛒 Create order (direct)
