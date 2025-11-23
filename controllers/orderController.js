@@ -94,7 +94,7 @@ export const createOrderFromCart = async (req, res) => {
 
     const purchasable = [];
     const soldOut = [];
-
+const affectedProducts = new Map();
     for (const i of cart.items) {
       const product = i.productId ? await Product.findById(i.productId) : null;
       if (!product) {
@@ -103,8 +103,11 @@ export const createOrderFromCart = async (req, res) => {
       }
 
       const variant = product.variants?.find(
-        (v) => v.size === i.size && v.color === i.color
-      );
+  (v) =>
+    String(v.size || "") === String(i.size || "") &&
+    String(v.color || "") === String(i.color || "")
+);
+
       const availableQty = variant
         ? variant.qty
         : product.variants?.reduce((a, v) => a + v.qty, 0) ?? 0;
@@ -117,8 +120,14 @@ export const createOrderFromCart = async (req, res) => {
       const finalQty = Math.min(i.qty, availableQty);
       purchasable.push({ ...i.toObject?.() ?? i, qty: finalQty });
 
-      variant.qty = Math.max(variant.qty - finalQty, 0);
-      await product.save();
+      if (!affectedProducts.has(product._id.toString())) {
+    affectedProducts.set(product._id.toString(), product);
+  }
+}
+
+for (const p of affectedProducts.values()) {
+  await p.save();
+}
     }
 
     if (!purchasable.length) {

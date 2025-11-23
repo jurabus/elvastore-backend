@@ -1,4 +1,5 @@
 import Product, { COLOR_ENUM } from "../models/Product.js";
+import NotifyRequest from "../models/NotifyRequest.js";
 
 // =============== HELPERS ===============
 const coerceImages = (body) => {
@@ -28,6 +29,49 @@ const summarizeAvailability = (p) => {
 };
 
 // =============== CRUD ENDPOINTS ===============
+// ✅ Get back-in-stock items for specific user
+export const getUserBackInStock = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const requests = await NotifyRequest.find({ userId });
+
+    if (!requests.length) {
+      return res.json({ items: [] });
+    }
+
+    const productIds = requests.map((r) => r.productId);
+
+    const products = await Product.find({ _id: { $in: productIds } }).lean();
+
+    const backInStock = [];
+
+    for (const p of products) {
+      const availableQty = (p.variants || []).reduce(
+        (sum, v) => sum + Number(v.qty || 0),
+        0
+      );
+
+      if (availableQty > 0) {
+        backInStock.push({
+          productId: p._id,
+          name: p.name,
+          imageUrl: p.images?.[0] || "",
+          availableQty,
+        });
+
+        // auto cleanup
+        await NotifyRequest.deleteOne({ userId, productId: p._id });
+      }
+    }
+
+    return res.json({ items: backInStock });
+  } catch (err) {
+    console.error("getUserBackInStock error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 
 // GET all
 export const getProducts = async (req, res) => {
@@ -49,6 +93,66 @@ export const getProducts = async (req, res) => {
     });
   }
 };
+
+//
+export const getRequestedItems = async (req, res) => {
+  try {
+    const data = await NotifyRequest.find()
+      .populate("productId", "name images")
+      .lean();
+
+    return res.status(200).json({ items: data });
+  } catch (err) {
+    console.error("getRequestedItems error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+
+//
+export const requestNotify = async (req, res) => {
+  try {
+    const { userId, productId } = req.body;
+
+    if (!userId || !productId) {
+      return res.status(400).json({ message: "userId and productId required" });
+    }
+
+    // ensure product exists
+    const product = await Product.findById(productId).lean();
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    const totalStock = (product.variants || []).reduce(
+      (sum, v) => sum + Number(v.qty || 0),
+      0
+    );
+
+    if (totalStock > 0) {
+      return res.status(409).json({
+        alreadyAvailable: true,
+        message: "Product is already back in stock",
+      });
+    }
+
+    const record = await NotifyRequest.findOneAndUpdate(
+      { userId, productId },
+      { userId, productId },
+      { upsert: true, new: true }
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: "Notify request saved",
+      record,
+    });
+  } catch (err) {
+    console.error("requestNotify error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 
 // GET single
 export const getProduct = async (req, res) => {
@@ -146,6 +250,16 @@ export const updateProduct = async (req, res) => {
       message: "Product updated successfully",
       item: summarizeAvailability(p),
     });
+	if (product.totalQty > 0) {
+  const pending = await NotifyRequest.find({ productId: product._id });
+
+  for (const req of pending) {
+    await NotifyRequest.deleteOne({ _id: req._id });
+  }
+
+  console.log(`📢 Product ${product.name} is back in stock – ${pending.length} users notified`);
+}
+
   } catch (e) {
     console.error("updateProduct error:", e);
     res.status(500).json({

@@ -5,49 +5,57 @@ import Product from "../models/Product.js";
 /* ------------------------ helpers ------------------------ */
 const getVariantAvailability = (product, size, color) => {
   if (!product) return { availableQty: 0 };
+
   const variants = Array.isArray(product.variants) ? product.variants : [];
 
-  if ((size && size !== "") || (color && color !== "")) {
-    const v = variants.find(
-      (vv) =>
-        String(vv.size || "") === String(size || "") &&
-        String(vv.color || "") === String(color || "")
-    );
-    return { availableQty: Number(v?.qty || 0) };
-  }
+  const match = variants.find(
+    (v) => String(v.size || "") === String(size || "") &&
+           String(v.color || "") === String(color || "")
+  );
+
+  if (match) return { availableQty: Number(match.qty || 0) };
 
   const total = variants.reduce((s, v) => s + Number(v.qty || 0), 0);
   return { availableQty: total };
 };
 
+
 const enrichCartDoc = async (cartDoc) => {
   if (!cartDoc) return { userId: null, items: [] };
 
-  const items = await Promise.all(
-    (cartDoc.items || []).map(async (i) => {
-      let product = null;
-      if (i.productId) product = await Product.findById(i.productId).lean();
+  const productIds = (cartDoc.items || [])
+  .filter(i => i.productId)
+  .map(i => i.productId.toString());
 
-      const { availableQty } = getVariantAvailability(product, i.size, i.color);
-      const isOutOfStock = availableQty <= 0;
+const products = await Product.find({
+  _id: { $in: productIds }
+}).lean();
 
-      const safeName = i.name || product?.name || "";
-      const safePrice = i.price ?? product?.price ?? 0;
-      let safeImage = i.imageUrl;
-      if (!safeImage && Array.isArray(product?.images) && product.images.length) {
-        safeImage = product.images[0];
-      }
+const productMap = new Map(products.map(p => [p._id.toString(), p]));
 
-      return {
-        ...((typeof i.toObject === "function") ? i.toObject() : i),
-        name: safeName,
-        price: safePrice,
-        imageUrl: safeImage || "",
-        isOutOfStock,
-        availableQty,
-      };
-    })
-  );
+const items = (cartDoc.items || []).map((i) => {
+  const product = productMap.get(i.productId?.toString());
+
+  const { availableQty } = getVariantAvailability(product, i.size, i.color);
+  const isOutOfStock = availableQty <= 0;
+
+  const safeName = i.name || product?.name || "";
+  const safePrice = i.price ?? product?.price ?? 0;
+  let safeImage = i.imageUrl;
+
+  if (!safeImage && Array.isArray(product?.images))
+    safeImage = product.images[0];
+
+  return {
+    ...((typeof i.toObject === "function") ? i.toObject() : i),
+    name: safeName,
+    price: safePrice,
+    imageUrl: safeImage || "",
+    isOutOfStock,
+    availableQty,
+  };
+});
+
 
   return {
     userId: cartDoc.userId,
@@ -76,38 +84,80 @@ export const getCart = async (req, res) => {
 export const addToCart = async (req, res) => {
   try {
     const { userId, item } = req.body;
-    if (!userId || !item?.name)
-      return res.status(400).json({ message: "userId and item required" });
+    if (!userId || !item?.productId)
+      return res.status(400).json({ message: "userId / productId required" });
+
+    const product = await Product.findById(item.productId).lean();
+    if (!product) return res.status(404).json({ message: "Product not found" });
+
+    const { availableQty } = getVariantAvailability(
+      product,
+      item.size,
+      item.color
+    );
+
+    if (availableQty <= 0) {
+      return res.status(409).json({
+        success: false,
+        code: "OUT_OF_STOCK",
+        message: "This variant is out of stock",
+      });
+    }
 
     let cart = await Cart.findOne({ userId });
     if (!cart) cart = new Cart({ userId, items: [] });
 
+    // strict match
     const existing = cart.items.find(
-      (i) => i.name === item.name && i.size === item.size && i.color === item.color
+      (i) =>
+        String(i.productId) === String(item.productId) &&
+        String(i.size || "") === String(item.size || "") &&
+        String(i.color || "") === String(item.color || "")
     );
 
+    const incomingQty = Number(item.qty || 1);
+
     if (existing) {
-      existing.qty += Number(item.qty || 1);
+      if (existing.qty + incomingQty > availableQty) {
+        return res.status(409).json({
+          success: false,
+          code: "MAX_STOCK_REACHED",
+          message: "No more of this item available in stock",
+        });
+      }
+      existing.qty += incomingQty;
     } else {
+      if (incomingQty > availableQty) {
+        return res.status(409).json({
+          success: false,
+          code: "MAX_STOCK_REACHED",
+          message: "No more of this item available in stock",
+        });
+      }
+
       cart.items.push({
-        productId: item.productId || undefined,
-        name: item.name,
-        price: Number(item.price || 0),
-        qty: Number(item.qty || 1),
+        productId: item.productId,
+        name: product.name,
+        price: Number(item.price || product.price || 0),
+        qty: incomingQty,
         size: String(item.size || ""),
         color: String(item.color || ""),
-        imageUrl: String(item.imageUrl || ""),
+        imageUrl:
+          item.imageUrl ||
+          (Array.isArray(product.images) ? product.images[0] : ""),
       });
     }
 
     await cart.save();
     const enriched = await enrichCartDoc(cart);
+
     return res.status(200).json({ success: true, cart: enriched });
   } catch (err) {
     console.error("addToCart error:", err);
     return res.status(500).json({ message: "Server error" });
   }
 };
+
 
 // PUT /api/cart/qty
 export const updateQty = async (req, res) => {
