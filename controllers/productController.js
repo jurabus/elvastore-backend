@@ -245,21 +245,25 @@ export const updateProduct = async (req, res) => {
     }
 
     await p.save();
+
+    // ✅ FIXED: use p, NOT product
+    if (p.totalQty > 0) {
+      const pending = await NotifyRequest.find({ productId: p._id });
+
+      for (const req of pending) {
+        await NotifyRequest.deleteOne({ _id: req._id });
+      }
+
+      console.log(
+        `📢 Product ${p.name} is back in stock – ${pending.length} users notified`
+      );
+    }
+
     res.json({
       success: true,
       message: "Product updated successfully",
       item: summarizeAvailability(p),
     });
-	if (product.totalQty > 0) {
-  const pending = await NotifyRequest.find({ productId: product._id });
-
-  for (const req of pending) {
-    await NotifyRequest.deleteOne({ _id: req._id });
-  }
-
-  console.log(`📢 Product ${product.name} is back in stock – ${pending.length} users notified`);
-}
-
   } catch (e) {
     console.error("updateProduct error:", e);
     res.status(500).json({
@@ -268,6 +272,7 @@ export const updateProduct = async (req, res) => {
     });
   }
 };
+
 
 // DELETE
 export const deleteProduct = async (req, res) => {
