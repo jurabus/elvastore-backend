@@ -255,8 +255,10 @@ export const logout = async (req, res) => {
 // =========================
 export const changePassword = async (req, res) => {
   try {
-    const { phone, oldPassword, newPassword } = req.body;
-    const user = await User.findOne({ phone });
+    const { oldPassword, newPassword } = req.body;
+
+    // ✅ Get authenticated user
+    const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     const match = await bcrypt.compare(oldPassword, user.password);
@@ -268,11 +270,10 @@ export const changePassword = async (req, res) => {
 
     res.json({ message: "Password updated successfully" });
   } catch (err) {
-    res
-      .status(500)
-      .json({ message: "Error updating password", error: err.message });
+    res.status(500).json({ message: "Error updating password", error: err.message });
   }
 };
+
 
 // =========================
 // 🟢 Forgot password (verify only phone)
